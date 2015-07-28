@@ -22,12 +22,16 @@ function trapit_plugin_menu() {
 
 
 function trapit_scripts_enqueue($hook) {
-    wp_enqueue_script('webcomponents', plugin_dir_url( __FILE__ ) . 'webcomponents.min.js');
-    wp_enqueue_script('isotope', plugin_dir_url( __FILE__ ) . 'isotope.pkgd.min.js');
-    wp_enqueue_script('fetch', plugin_dir_url( __FILE__ ) . 'fetch.js', array('webcomponents'));
-    wp_enqueue_script('user', plugin_dir_url( __FILE__ ) . 'user.js', array('webcomponents', 'isotope', 'fetch', 'jquery'));
+    // only enqueue scripts when page=trapit-menu-page
+    $wp_screen = get_current_screen();
+    //trapit_preout($wp_screen->base);
+    if ($wp_screen->base == 'toplevel_page_trapit-menu-page') {
+        wp_enqueue_script('webcomponents', plugin_dir_url( __FILE__ ) . 'webcomponents.min.js');
+        wp_enqueue_script('isotope', plugin_dir_url( __FILE__ ) . 'isotope.pkgd.min.js');
+        wp_enqueue_script('fetch', plugin_dir_url( __FILE__ ) . 'fetch.js', array('webcomponents'));
+        wp_enqueue_script('user', plugin_dir_url( __FILE__ ) . 'user.js', array('webcomponents', 'isotope', 'fetch', 'jquery'));
+    }
 }
-// 'admin_enqueue_scripts
 add_action('admin_enqueue_scripts', 'trapit_scripts_enqueue');
 
 
