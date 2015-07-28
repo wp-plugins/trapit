@@ -2,8 +2,8 @@
 Contributors: Trapit Inc.
 Tags: content, curation, blog, rss, trapit
 Requires at least: 4.1
-Tested up to: 4.2.2
-Stable tag: 1.0.0
+Tested up to: 4.2.3
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,5 +18,8 @@ For a demo or to sign-up for Trapit, see: http://trap.it/
 1. Create a Post
 
 == Changelog ==
+= 1.0.1 =
+* Minor UI changes
+
 = 1.0.0 =
 * Initial release.

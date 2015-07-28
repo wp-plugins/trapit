@@ -1,38 +1,8 @@
 window.TRAPIT = window.TRAPIT || {};
+
 (function () {
     var queue_items_div = "trapit-body-masonry";
     var iso;
-
-    function trap_name_click_handler(trap_id, th) {
-        var active_traps = th.parentNode.querySelectorAll(".trapit-category-trap.active");
-        Array.prototype.forEach.call(active_traps, function (active_trap) {
-            active_trap.classList.remove("active");
-        });
-        th.classList.add("active");
-
-        // Old URL format
-        //$url = "https://{$opt_vals[trapit_hostname]}.trap.it/api/v4/{$opt_vals[trapit_slug]}/traps/{$trap_id}/queue/?pretty=true&type=bundle&size=500";
-        var url = "https://" + trapit_opt_vals["trapit_hostname"] + "/api/v4/" + trapit_opt_vals["trapit_slug"] + "/traps/" + trap_id + "/queue/?pretty=true&type=bundle&size=20";
-
-        console.debug("Inside trap_name_click_handler");
-
-        fetch_json_then(url, load_queue_items);
-    }
-
-    function all_traps_click_handler() {
-        var url = "https://" + trapit_opt_vals["trapit_hostname"] + "/api/v4/" + trapit_opt_vals["trapit_slug"] + "/public-traps/queue/?url=20";
-        var all_traps = TRAPIT.ROOT.querySelector(".all-traps");
-        var active_headers = all_traps.parentNode.querySelectorAll(".trapit-category-header.active");
-        
-        console.debug("Inside all_traps_click_handler");
-        hide_sidebar_traps();
-        Array.prototype.forEach.call(active_headers, function (header) {
-            header.classList.remove("active");
-        });
-        all_traps.classList.add("active");
-
-        fetch_json_then(url, load_queue_items);
-    }
 
     function fetch_json_then(url, action, options) {
         // fetch JSON
@@ -41,13 +11,12 @@ window.TRAPIT = window.TRAPIT || {};
             args.push(options);
         }
         
-        fetch.apply(null, args).then(
+        return fetch.apply(null, args).then(
             function (response) {
                 switch (response.status) {
                 case 200:
                     // Examine the text in the response
-                    response.json().then(action(options));
-                    break;
+                    return response.json().then(action(options));
                 case 204:
                     // no documents in queue
                     console.log("Trap is empty. Status Code: 204");
@@ -96,18 +65,25 @@ window.TRAPIT = window.TRAPIT || {};
         var new_items = records.map(function (record, i) {
             var doc = record.document;
             var sizes = doc.images.sizes || [];
-            var image_url = null;
-            var height;
+            var image_url_320;
+            var image_url_full;
+            var dimensions;
 
-            sizes.some(function (size, j) {
-                if (size.dimensions.lastIndexOf('320x', 0) === 0) {
-                    image_url = size.url;
-                    height = size.dimensions.substring(4);
-                    return true;
+            sizes.forEach(function (size, j) {
+                if (size.dimensions.lastIndexOf('320x', 0)) {
+                    image_url_full = size.url;
+                } else {
+                    image_url_320 = size.url;
+                    dimensions = size.dimensions.split("x");
                 }
             });
 
-            return create_item(record, image_url, height);
+            if (image_url_320 && !image_url_full) {
+                image_url_full = image_url_320;
+            }
+            var image_urls = image_url_320 ? [image_url_320, image_url_full] : [];
+
+            return create_item(record, image_urls, dimensions);
         });
 
         new_items.forEach(function (item) {
@@ -196,7 +172,7 @@ window.TRAPIT = window.TRAPIT || {};
     var form = Ele("form");
     var button = Ele("button");
 
-    function create_item(record, image_url, image_height) {
+    function create_item(record, image_urls, dimensions) {
         var doc = record.document;
         var source = record.source.name;
         var summary = doc.summary;
@@ -205,7 +181,13 @@ window.TRAPIT = window.TRAPIT || {};
         if (primary_name === "AGGREGATE TRAP") {
             primary_name = record.origin.name.toUpperCase();
         }
-        var image = image_url ? img("article-img", null, {src: image_url, width: "320", height: image_height}) : null;
+
+        var image;
+        var image_url = image_urls[0];
+        var image_url_full = image_urls[1];
+        if (image_url) {
+            image = img("article-img", null, {src: image_url, width: dimensions[0], height: dimensions[1]});
+        }
 
         var post_form = form("post-form", [input(null, null, {type: "hidden",
                                                               value: doc.title,
@@ -217,7 +199,7 @@ window.TRAPIT = window.TRAPIT || {};
                                                               value: doc.original,
                                                               name: "trapit_original"}),
                                            input(null, null, {type: "hidden",
-                                                              value: image_url,
+                                                              value: image_url_full,
                                                               name: "trapit_image_url"}),
                                            input(null, null, {type: "hidden",
                                                               value: doc.id,
@@ -227,11 +209,6 @@ window.TRAPIT = window.TRAPIT || {};
                                                               name: "trapit_submit_hidden"})
                                           ],
                              {"method": "post", "action": ""});
-
-        var submit_action = {onclick: function () {
-            var form = this.parentNode.querySelector("form");
-            form.submit();
-        }};
 
         var published = new Date(1000 * doc.published);
         published = format_published(published);
@@ -254,7 +231,7 @@ window.TRAPIT = window.TRAPIT || {};
                                        )]),
                      div("info date-info", span("publish-date", published)),
                      clearfix,
-                     div("action", [icon_share_btn, clearfix], submit_action),
+                     div("action", [icon_share_btn, clearfix]),
                      post_form,
                      clearfix])]);
         var item_elements = item.getElements();
@@ -291,7 +268,8 @@ window.TRAPIT = window.TRAPIT || {};
                     });
 
                     for (var key in (this.opts || {})) {
-                        element[key] = this.opts[key];
+                        // use setAttribute for element.dataset compatibility
+                        element.setAttribute(key, this.opts[key]);
                     }
 
                     return element;
@@ -337,18 +315,11 @@ window.TRAPIT = window.TRAPIT || {};
     
     function load_template() {
         var trapit_window = document.getElementById("trapit-window");
-        //var list_container = document.getElementById("trapit-list-container");
         var root = trapit_window.createShadowRoot();
         var template = document.getElementById("trapit-template");
         var clone = document.importNode(template.content, true);
         root.appendChild(clone);
 
-        //root.appendChild(list_container);
-        //var content_traps = document.querySelector("trapit-content-traps");
-        //root.appendChild(content_traps);
-
-        //var content = document.createElement("content");
-        //root.appendChild(content);
         TRAPIT.ROOT = root;
     }
 
@@ -360,32 +331,6 @@ window.TRAPIT = window.TRAPIT || {};
         }
     }
     
-    function trap_category_click_handler(th, category_id) {
-        var $ = jQuery;
-        var $this = $(th);
-        var $traps = $this.nextUntil(".trapit-category-header");
-        var active_headers = th.parentNode.querySelectorAll(".trapit-category-header.active");
-        var this_is_active = th.classList.contains("active");
-        var all_traps_div = TRAPIT.ROOT.querySelector(".all-traps");
-
-        console.debug("Inside trap_category_click_handler");
-
-        hide_sidebar_traps();
-
-        all_traps_div.classList.remove("active");
-        Array.prototype.forEach.call(active_headers, function (header) {
-            header.classList.remove("active");
-        });
-
-        // toggle activity
-        if (!this_is_active) {
-            $traps.show();
-            th.classList.add("active");
-
-            load_alligator_view(category_id);
-        }
-    }
-
     function get_fetch_options(options) {
         var authorization = trapit_opt_vals["trapit_user_id"] + ":" + trapit_opt_vals["trapit_api_key"];
 
@@ -398,11 +343,13 @@ window.TRAPIT = window.TRAPIT || {};
                 Authorization: authorization
             }
         };
+        
         if (options) {
             for (var key in options) {
                 default_options[key] = options[key];
             }
         }
+        
         return default_options;
     }
     
@@ -411,6 +358,8 @@ window.TRAPIT = window.TRAPIT || {};
 
         // sample curl query:
         // curl -u "{trapit_opt_vals["trapit_user_id"]}:<session>" -L https://{trapit_opt_vals["trapit_hostname"]}/api/v3/{trapit_opt_vals["trapit_slug"]}/aggregates/team_id={team-id}&category_id={category_id}&public=true&content_type='text'&visible=false/ -X GET
+        // full sample URL:
+        // "https://test8.trap.it/api/v3/t8/aggregates/category_id=9f079202fd3f41debe295bb591c49311&public=true&visible=true/"
         
         var url = ["https://", trapit_opt_vals["trapit_hostname"],
                    "/api/v3/", trapit_opt_vals["trapit_slug"], "/aggregates/",
@@ -427,7 +376,6 @@ window.TRAPIT = window.TRAPIT || {};
                 switch (response.status) {
                 case 202:
                     // documentation says to look for a 202 response
-                    "https://test8.trap.it/api/v3/t8/aggregates/category_id=9f079202fd3f41debe295bb591c49311&public=true&visible=true/"
                 case 201:
                     // actually receive a 201 response upon first call
 
@@ -460,31 +408,334 @@ window.TRAPIT = window.TRAPIT || {};
             });
     }
 
+
+    function trapit_get_data_id(element, element_type) {
+        return element.getAttribute('data-' + element_type + '-id');
+    }
+
+    
+    function add_listeners() {
+        var app = TRAPIT.ROOT.querySelector(".app");
+        delegate(app, "article .action", "click", submit_action);
+        delegate(app, ".trapit-category-trap", "click", trap_name_click_handler);
+        delegate(app, ".trapit-category-header", "click", trap_category_click_handler);
+        app.querySelector(".all-traps").addEventListener("click", all_traps_click_handler, false);
+        //jQuery(document).scroll(trapitScrollHandler);
+    }
+
+    function submit_action(e) {
+        var form_element = this.parentNode.querySelector("form");
+        form_element.submit();
+        e.preventDefault();
+    }
+
+    function trap_name_click_handler(e) {
+        var trap_id = trapit_get_data_id(this, "trap");
+        var active_traps = this.parentNode.querySelectorAll(".trapit-category-trap.active");
+        Array.prototype.forEach.call(active_traps, function (active_trap) {
+            active_trap.classList.remove("active");
+        });
+        this.classList.add("active");
+
+        // Old URL format
+        //$url = "https://{$opt_vals[trapit_hostname]}.trap.it/api/v4/{$opt_vals[trapit_slug]}/traps/{$trap_id}/queue/?pretty=true&type=bundle&size=500";
+        var url = "https://" + trapit_opt_vals["trapit_hostname"] + "/api/v4/" + trapit_opt_vals["trapit_slug"] + "/traps/" + trap_id + "/queue/?pretty=true&type=bundle&size=20";
+
+        console.debug("Inside trap_name_click_handler");
+
+        fetch_json_then(url, load_queue_items);
+
+        e.preventDefault();
+    }
+
+    function trap_category_click_handler(e) {
+        var th = this;
+        var traps = next_until(th, ".trapit-category-header");
+        var actives = th.parentNode.querySelectorAll(".active");
+        var this_is_active = th.classList.contains("active");
+        var all_traps_div = TRAPIT.ROOT.querySelector(".all-traps");
+        var category_id = trapit_get_data_id(th, "category");
+        
+        console.debug("Inside trap_category_click_handler");
+        
+        hide_sidebar_traps();
+        
+        all_traps_div.classList.remove("active");
+        Array.prototype.forEach.call(actives, function (header) {
+            header.classList.remove("active");
+        });
+
+        // toggle activity
+        if (!this_is_active) {
+            th.classList.add("active");
+            // show the category's traps
+            traps.forEach(function (trap) {
+                trap.style.display = "block";
+            });
+            
+            load_alligator_view(category_id);
+        }
+        
+        e.preventDefault();
+    }
+    
+    function all_traps_click_handler(e) {
+        var url = "https://" + trapit_opt_vals["trapit_hostname"] + "/api/v4/" + trapit_opt_vals["trapit_slug"] + "/public-traps/queue/?url=20";
+        var all_traps = TRAPIT.ROOT.querySelector(".all-traps");
+        var active_headers = all_traps.parentNode.querySelectorAll(".trapit-category-header.active");
+        
+        console.debug("Inside trapit_all_traps_click_handler", e);
+        hide_sidebar_traps();
+        Array.prototype.forEach.call(active_headers, function (header) {
+            header.classList.remove("active");
+        });
+        all_traps.classList.add("active");
+        
+        fetch_json_then(url, load_queue_items);
+        
+        if (e)
+            e.preventDefault();
+    }
+
+    function delegate(top_element, selector, event_type, handler) {
+        top_element.addEventListener(event_type, function (e) {
+            // iterate up the DOM tree until a matching node is found
+            // or we pass the top_element
+            for (var retarget = e.target;
+                 retarget && retarget != top_element.parentNode;
+                 retarget = retarget.parentNode) {
+
+                if (retarget.matches(selector)) {
+                    // if handler returns truthy, continue with delegation
+                    if (!handler.call(retarget, e)) {
+                        break;
+                    }
+                }
+            }
+        }, false);
+    }
+
+    function next_until(start_element, selector) {
+        for (var sibling = start_element, keepers = [];
+             (sibling = sibling.nextElementSibling) && !sibling.matches(selector);
+             keepers.push(sibling));
+        return keepers;
+    }
+
+    /***
+        Set up left column
+    ***/
+
+    
+    // Mimic PHP array_flip function
+    function array_flip(hashmap) {
+        var flipped = {};
+
+        Object.keys(hashmap).forEach(function (key) {
+            flipped[hashmap[key]] = key;
+        });
+        
+        return flipped;
+    }
+    
+    
+    // Mimic PHP array_intersect_key function
+    function array_intersect_key() {
+        var intersection = {};
+        var len = arguments.length;
+        var master = arguments[0];
+        var master_keys = Object.keys(master);
+        var obj;
+        
+        for (var i = 1; i < len; ++i) {
+            obj = arguments[i];
+            master_keys.forEach(master_keys_intersect);
+        }
+        
+        function master_keys_intersect(key) {
+            if (obj.hasOwnProperty(key)) {
+                intersection[key] = master[key];
+            }
+        }
+        
+        return intersection;
+    }
+    
+    // Convert a hashmap into an array of key-value pairs
+    function hashmap_to_array(hashmap) {
+        return Object.keys(hashmap).map(function (key) {
+            return [key, hashmap[key]];
+        });
+    }
+    
+    
+    // all arguments should be empty objects
+    function fetch_categories_traps(category_ids_names, category_ids_traps, trap_ids_names) {
+        var opt_vals = trapit_opt_vals;
+        
+        // no-slings-out=true in the URL below prevents "feeder" traps from showing up
+        var url = "https://" + opt_vals["trapit_hostname"] + "/api/v4/" +
+            opt_vals["trapit_slug"] + "/public-traps/?pretty=true&type=bundle&size=500&no-slings-out=true";
+        
+        return TRAPIT.fetch_json_then(url, load_categories_traps);
+        
+        function load_categories_traps(options) {
+            return function (body) {
+                // pluck out & display desired values from body
+                var next = body.next;
+                var prev = body.prev;
+                var records = body.records;
+                
+                // iterating public traps
+                records.forEach(function (record) {
+                    var associate_ids = function (category) {
+                        category_ids_names[category.id] = category.name;
+                        if (!category_ids_traps.hasOwnProperty(category.id)) {
+                            category_ids_traps[category.id] = [];
+                        }
+                        category_ids_traps[category.id].push(record.id);
+                    };
+                    
+                    trap_ids_names[record.id] = record.name;
+                    
+                    if (record.categories.length) {
+                        record.categories.forEach(associate_ids);
+                    } else {
+                        // trap has no category associated with it
+                        // create an Other category
+                        associate_ids({"id": "0", "name": "Other"});
+                    }
+                });
+            };
+        }
+    }
+    
+    function left_column_loader() {
+        var category_ids_names = {}, category_ids_traps = {}, trap_ids_names = {};
+        return fetch_categories_traps(category_ids_names, category_ids_traps, trap_ids_names).then(function () {
+            var icon_minus = img('icon-minus', null, {title: "Collapse", src: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTEiIGhlaWdodD0iMyIgdmlld0JveD0iMCAwIDExIDMiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHRpdGxlPlJlY3RhbmdsZSAxMTE8L3RpdGxlPjxwYXRoIGQ9Ik0xMSAwSDB2M2gxMVYweiIgZmlsbD0iI0Q0RDRENCIgZmlsbC1ydWxlPSJldmVub2RkIi8+PC9zdmc+"});
+            var icon_plus = img('icon-plus', null, {title: "Expand", src: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTEiIGhlaWdodD0iMTEiIHZpZXdCb3g9IjAgMCAxMSAxMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+cGx1czwvdGl0bGU+PHBhdGggZD0iTTcgNGg0djNIN3Y0SDRWN0gwVjRoNFYwaDN2NHoiIGZpbGw9IiM5QjlCOUIiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvc3ZnPg=="});
+            var section_els = [];
+            
+            var category_ids_names_arr = hashmap_to_array(category_ids_names);
+            category_ids_names_arr.sort(function (a, b) {
+                // sort categories by name, leaving "Other" in last place
+                a = a[1];
+                b = b[1];
+                
+                switch ("Other") {
+                case a:
+                    return +(a !== b);
+                case b:
+                    return -1;
+                }
+                
+                return a.localeCompare(b, "en", {"sensitivity": "base"});
+            });
+            
+            category_ids_names_arr.forEach(function (category_id_name) {
+                var category_id = category_id_name[0];
+                var category_name = category_id_name[1];
+                var data_category_id = {"data-category-id": category_id};
+                
+                section_els.push(div('header trapit-category-header', [
+                    div('title',
+                        span('title-span', category_name)),
+                    div('meta',
+                        div('expander-collapser', [icon_plus, icon_minus])
+                       )], data_category_id));
+                
+                
+                // lookup traps by category_id from category_ids_traps
+                var trap_ids = category_ids_traps[category_id];
+                
+                // sort traps in alphabetical order per category
+                var temp_ids = array_flip(trap_ids);
+                var temp_ids_names = array_intersect_key(trap_ids_names, temp_ids);
+                var sorted_ids_names = hashmap_to_array(temp_ids_names);
+                sorted_ids_names.sort(function (a, b) {
+                    return a[1].localeCompare(b[1], "en", {"sensitivity": "base"});
+                });
+                
+                sorted_ids_names.forEach(function (id_name) {
+                    var trap_id = id_name[0];
+                    var trap_name = id_name[1];
+                    var other = {"data-trap-id": trap_id};
+                    section_els.push(div('item primary trapit-category-trap',
+                                         div('info',
+                                             div('titleWrapper',
+                                                 span('trap-name', trap_name))),
+                                         other));
+                });
+            });
+            
+            
+            var icon_all = img('icon-all icon-all-traps', null, {src: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTkiIHZpZXdCb3g9IjAgMCAyMCAxOSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+UGF0aCArIFBhZ2UgMzwvdGl0bGU+PGcgZmlsbD0iIzAwNUI1NSIgZmlsbC1ydWxlPSJldmVub2RkIj48cGF0aCBkPSJNOCAxNkg0VjNoMTJ2M2gtNlY1SDZ2NWgydjFINnYxaDJ2MUg2djFoMnYyem0zLTEwaDNWNWgtM3YxeiIgaWQ9IlBhdGgiLz48cGF0aCBkPSJNOCAxOWgxMlY2SDh2MTN6bTItMmg4di0xaC04djF6bTAtMmg4di0xaC04djF6bTUtNGgzdi0xaC0zdjF6bTAgMmgzdi0xaC0zdjF6bTAtNGgzVjhoLTN2MXptLTUgNGg0VjhoLTR2NXoiLz48cGF0aCBkPSJNNCAxM0gwVjBoMTJ2M0g2VjJIMnY1aDJ2MUgydjFoMnYxSDJ2MWgydjJ6TTcgM2gzVjJIN3YxeiIvPjwvZz48L3N2Zz4="});
+            var list = div('list', section_els);
+            var app = div('app', [null, //new Nav('navbar navbar-default navbar-fixed-top'),
+                                  div('wrapper',
+                                      [div('sidebar-wrapper',
+                                           div('sidebar traps',
+                                               [div('all-traps', [icon_all,
+                                                                  span(null, 'All')],
+                                                    null),
+                                                div('list-container', list, {id: "trapit-list-container"})
+                                               ])),
+                                       //new Div('notification'),
+                                       div(null),
+                                       // right-hand-side elements
+                                       div('content traps',
+                                           [div('queue',
+                                                [//new Div('filter row'),
+                                                    div(null),
+                                                    div('body masonry trapit-body-masonry')])])])]);
+            
+            //echo '</div>'; // trapit-list-container
+            
+            var app_elements = app.getElements();
+            var template = document.getElementById("trapit-template");
+            // make sure this is appended to the template before being cloned into shadow root
+            template.content.appendChild(app_elements);
+            console.log("Appended left column.");
+        });
+    }
+
+
+    /***
+        Load the JavaScript
+    ***/
+    
+    
     var oldWpOnload = (typeof wpOnload === 'function') ? wpOnload : null;
     wpOnload = function () {
         if (oldWpOnload) {
             oldWpOnload();
         }
+        
+        left_column_loader().then(function () {
+            load_template();
+            hide_sidebar_traps();
+            
+            var wpfooter = document.getElementById("wpfooter");
+            //wpfooter.style.display = "none";
+            wpfooter.style.visibility = "hidden";
+            var wpbody_content = document.getElementById("wpbody-content");
+            wpbody_content.style.paddingBottom = "0px";
+            var app = TRAPIT.ROOT.querySelector(".app");
+            app.style.minHeight = window.innerHeight + "px";
+            
+            // make All traps the default view
+            var all_traps = app.querySelector(".all-traps");
+            all_traps_click_handler();
+            all_traps.classList.add("active");
 
-        load_template();
-        hide_sidebar_traps();
-
-        var wpfooter = document.getElementById("wpfooter");
-        //wpfooter.style.display = "none";
-        wpfooter.style.visibility = "hidden";
-        var wpbody_content = document.getElementById("wpbody-content");
-        wpbody_content.style.paddingBottom = "0px";
-        var app = TRAPIT.ROOT.querySelector(".app");
-        app.style.minHeight = window.innerHeight + "px";
-
-        // make All traps the default view
-        var all_traps = app.querySelector(".all-traps");
-        all_traps_click_handler();
-        all_traps.classList.add("active");
+            add_listeners();
+        });
     };
-
+    
     TRAPIT.trap_name_click_handler = trap_name_click_handler;
     TRAPIT.all_traps_click_handler = all_traps_click_handler;
     TRAPIT.trap_category_click_handler = trap_category_click_handler;
     TRAPIT.load_template = load_template;
+    TRAPIT.fetch_json_then = fetch_json_then;
 })();

@@ -34,7 +34,7 @@ function trapit_plugin_options() { //settings_page() {
             $opt_vals[$opt_name] = $opt_val;
         }
 
-        // attempt authenticating with the new credentials
+        // Attempt authenticating with the new credentials
         $creds = trapit_universal_authenticate($opt_vals['trapit_email'], $opt_vals['trapit_password']);
         foreach ($creds as $key => $opt_val) {
             $opt_name = sanitize_text_field("trapit_$key");
@@ -126,7 +126,6 @@ function trapit_universal_authenticate($email, $password) {
         'blocking'    => true,
         'headers'     => array(),
         'cookies'     => array(),
-        'body'        => null,
         'compress'    => false,
         'decompress'  => true,
         'sslverify'   => true,
